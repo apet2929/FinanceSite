@@ -1,10 +1,47 @@
+import WebSocket from "ws";
+import fetch from "fetch";
 
-function getBtcPrice() {
-    return 1.0;
+async function getStockPrice(ticker) {
+    const api_key = process.env.YAHOO_FINANCE_API_KEY;
+    
+    const response = await fetch(`https://yfapi.net/v11/finance/quoteSummary/${ticker.toUpperCase()}`, {
+        method: 'GET', // *GET, POST, PUT, DELETE, etc.
+        mode: 'cors', // no-cors, *cors, same-origin
+        cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
+        credentials: 'same-origin', // include, *same-origin, omit
+        headers: {
+            'x-api-key': api_key,
+            'Content-Type': 'application/json'
+        },
+        params: {modules: 'defaultKeyStatistics,assetProfile'},
+        redirect: 'follow', // manual, *follow, error
+        referrerPolicy: 'no-referrer', // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+      });
+    return await response.json();
 }
 
-function getBtcPrice(date) {
-    return 1.0;
+async function getCryptoPrice(ticker) {
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${ticker.toLowerCase()}@kline_1m`);
+
+    ws.on('message', async (data) => {
+        const incomingData = JSON.parse(data.toString());
+        if (incomingData.k) {
+        const isClosed = incomingData.k.x;
+        const symbolPrice = Number(incomingData.k.c);
+        console.log(`${symbol.toUpperCase()} : ${symbolPrice} -- closed = ${isClosed}`);
+        return symbolPrice;
+        } 
+        console.error("Binance request failed!");
+        return null;
+    });
+    return null;
+}
+
+
+function updatePageData(user) {
+    document.getElementById("cash").innerText = "Cash : $" + user.cash;
+    document.getElementById("assets").innerText = "Assets : " + user.assets;
+    document.getElementById("history").innerText = "History : " + user.history;
 }
 
 class Transaction {
@@ -16,24 +53,25 @@ class Transaction {
     }
 }
 
-class Bitcoin {
-    static {
-        this.price_history = [];
+// class Bitcoin {
+//     static {
+//         this.price_history = [];
 
-        const today = new Date();
-        for (let index = 0; index < 365; index++) {
-            this.price_history.push(getBtcPrice(new Date(today.year, today.month, today.date - index)))   
-        }
-    }
+//         const today = new Date();
+//         for (let index = 0; index < 365; index++) {
+//             // this.price_history.push(getBtcPrice(new Date(today.year, today.month, today.date - index)))  
+//             this.price_history.push(getCryptoPrice("btc"))  
+//         }
+//     }
 
-    constructor() {
-        Asset.apply(this);
-    }
+//     constructor() {
+//         Asset.apply(this);
+//     }
 
-    update() {
-        return getBtcPrice();
-    }
-}
+//     update() {
+//         return getCryptoPrice("btc");
+//     }
+// }
 
 /*
 Asset is an abstract class that will be used to provide a common interface to track the price of different assets
@@ -89,6 +127,7 @@ class User {
         this.cash += amount;
         const transaction = new Transaction(amount, date);
         this.history.push(transaction)
+        updatePageData(this);
     }
 
     toString() {
@@ -105,10 +144,19 @@ class ConversionRate {
     }
 }
 
-const assets = [
-    new Bitcoin(103.532)
-];
-var user = new User(1000, assets);
-user.doCashTransaction(20);
-document.write(user.toString())
-console.log(user);
+async function testRun() {
+    console.log(getStockPrice("AAPL"));
+    setInterval(() => {
+        console.log(getStockPrice("AAPL"));
+    }, 1000 * 60 * 60); // 1 hour
+}
+
+// const assets = [
+//     new Bitcoin(103.532)
+// ];
+
+// var user = new User(1000, assets);
+testRun();
+// user.doCashTransaction(20);
+// document.write(user.toString())
+// console.log(user);
