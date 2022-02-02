@@ -1,23 +1,103 @@
 import WebSocket from "ws";
-import fetch from "fetch";
+import 'dotenv/config'
+import fetch from "node-fetch";
+import * as fs from "fs";
+import assert, { ok, throws } from "assert";
+import { Console } from "console";
 
-async function getStockPrice(ticker) {
+function updatePageData(user) {
+    document.getElementById("cash").innerText = "Cash : $" + user.cash;
+    document.getElementById("assets").innerText = "Assets : " + user.assets;
+    document.getElementById("history").innerText = "History : " + user.history;
+}
+
+function readJsonFile(path) {
+    fs.readFile(path, 'utf8', function readFileCallback(err, data){
+        if (err){
+            console.log(err);
+        } else {
+            return JSON.parse(data);
+        }
+    });
+}
+
+function writeStockJson(stock) {
+    console.log("Writing stock json " + stock.ticker);
+    let json = JSON.stringify(stock);
+    fs.writeFile(`stocks/${stock.ticker}Save.json`, json, 'utf8', (error) => {
+        if(error) {
+            console.error("There was an error!");
+        } 
+        console.log("Json writing complete!");
+    });
+}
+
+function concatTickers(tickers) {
+    let tickerStr = ""
+    tickers.forEach(element => {
+        tickerStr = tickerStr.concat(element.toUpperCase() + ",")
+    });
+    tickerStr = tickerStr.substring(0, tickerStr.length-1);
+    return tickerStr;
+}
+
+function getBasicYahooUrl(shortUrl) {
+    return `https://yfapi.net/${shortUrl}`
+}
+
+function getYahooUrlWithTicker(shortUrl, ticker) {
+    return getBasicYahooUrl(shortUrl).concat(`/${ticker.toUpperCase()}`)
+}
+
+function addParamsToUrl(url, params) {
+    if(params == null) return url;
+    let rUrl = new URL(url);
+    for (const [key, value] of Object.entries(params)) {
+        rUrl.searchParams.set(key, value);
+    }
+    return rUrl.toString();
+}
+
+function isolateStockFromJson(stocksData, ticker) {
+
+}
+
+async function getStocksData(tickers) {
+    if(tickers.length > 10) console.error("Maximum # of stocks exceeded!");
+    let tickerStr = concatTickers(tickers);
+    let url = getBasicYahooUrl("v6/finance/quote");
+    let params = {
+        region: "US",
+        lang: "en",
+        symbols: tickerStr,  
+    };
+
+    return await getStockData(url, params);
+}
+
+async function getStockData(url, params=null) {
     const api_key = process.env.YAHOO_FINANCE_API_KEY;
-    
-    const response = await fetch(`https://yfapi.net/v11/finance/quoteSummary/${ticker.toUpperCase()}`, {
-        method: 'GET', // *GET, POST, PUT, DELETE, etc.
-        mode: 'cors', // no-cors, *cors, same-origin
-        cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
-        credentials: 'same-origin', // include, *same-origin, omit
+    const realUrl = addParamsToUrl(url, params);
+    const options = {
+        method: 'GET',
+        url: realUrl,
         headers: {
-            'x-api-key': api_key,
-            'Content-Type': 'application/json'
+          'x-api-key': api_key
         },
-        params: {modules: 'defaultKeyStatistics,assetProfile'},
-        redirect: 'follow', // manual, *follow, error
-        referrerPolicy: 'no-referrer', // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-      });
+    };
+    console.log(options);
+    const response = await fetch(realUrl, options);
     return await response.json();
+}
+
+async function getStockChart(ticker) {
+    return await getStockData(getYahooUrlWithTicker("/v8/finance/chart", ticker));
+}
+
+async function getDetailedStockData(ticker) {
+    let params = {modules: 'defaultKeyStatistics,assetProfile'};
+    let url = getYahooUrlWithTicker("v11/finance/quoteSummary", ticker);
+    return await getStockData(url, params);
 }
 
 async function getCryptoPrice(ticker) {
@@ -37,11 +117,70 @@ async function getCryptoPrice(ticker) {
     return null;
 }
 
+class Stock {
+    static stocks = {};
 
-function updatePageData(user) {
-    document.getElementById("cash").innerText = "Cash : $" + user.cash;
-    document.getElementById("assets").innerText = "Assets : " + user.assets;
-    document.getElementById("history").innerText = "History : " + user.history;
+    static update() {
+        console.log("Stock.update()");
+        return getStocksData(Object.keys(Stock.stocks)).then(Stock._updateStocksData, Stock._onRequestRejected);
+    }
+
+    static _updateStocksData(data) {
+        console.log("Stock._updateStocksData()");
+        let stocksData = data["quoteResponse"]["result"];
+        stocksData.forEach(stock_data => {
+            let ticker = stock_data["symbol"];
+            Stock.stocks[ticker].basic_data = stock_data;
+            console.log(`${ticker} basic data set: ${stock_data}`);
+        });
+    }
+    
+    static _onRequestRejected(error) {
+        console.error(error);
+        throw new Error("Stocks data collection failed!")
+    }
+    
+    static getStock(ticker) {
+        if(!Stock.stocks[ticker]) {
+            throw new Error(`Stock ${ticker} does not exist!`);
+        }
+        return Stock.stocks[ticker]
+    }
+
+    constructor(ticker) {
+        this.ticker = ticker.toUpperCase();
+        if(Stock.stocks[this.ticker]) console.error(`Stock ${this.ticker} already exists! Overwriting!`);
+        Stock.stocks[this.ticker] = this;
+        this.basic_data = {};
+        this.detailed_data = {};
+        this.chart_data = {};
+    }
+
+    getBasicData() {
+        if(this.basic_data == {} || this.basic_data == null) {
+            Stock.update();
+        }
+        ok(this.basic_data, `Static Stock update did not set ${this.ticker} basic data!`);
+        return this.basic_data;
+    }
+
+    getDetailedData() {
+        if(this.detailed_data == {} || this.detailed_data == null) {
+            this.detailed_data = getDetailedStockData(this.ticker);
+        }
+        return this.detailed_data;
+    }
+
+    getChartData() {
+        if(this.chart_data == {} || this.chart_data == null) {
+            this.chart_data = getStockChart(this.ticker);
+        }
+        return this.chart_data;
+    }
+
+    getCurrentPrice() {
+        return this.basic_data["regularMarketPrice"];
+    }
 }
 
 class Transaction {
@@ -53,25 +192,26 @@ class Transaction {
     }
 }
 
-// class Bitcoin {
-//     static {
-//         this.price_history = [];
+class Bitcoin {
+    // static {
+    //     this.price_history = [];
 
-//         const today = new Date();
-//         for (let index = 0; index < 365; index++) {
-//             // this.price_history.push(getBtcPrice(new Date(today.year, today.month, today.date - index)))  
-//             this.price_history.push(getCryptoPrice("btc"))  
-//         }
-//     }
+    //     const today = new Date();
+    //     for (let index = 0; index < 365; index++) {
+    //         // this.price_history.push(getBtcPrice(new Date(today.year, today.month, today.date - index)))  
+    //         this.price_history.push(getCryptoPrice("btc"))  
+    //     }
+    // }
+    
 
-//     constructor() {
-//         Asset.apply(this);
-//     }
+    constructor() {
+        Asset.apply(this);
+    }
 
-//     update() {
-//         return getCryptoPrice("btc");
-//     }
-// }
+    update() {
+        return getCryptoPrice("btc");
+    }
+}
 
 /*
 Asset is an abstract class that will be used to provide a common interface to track the price of different assets
@@ -145,17 +285,30 @@ class ConversionRate {
 }
 
 async function testRun() {
-    console.log(getStockPrice("AAPL"));
-    setInterval(() => {
-        console.log(getStockPrice("AAPL"));
-    }, 1000 * 60 * 60); // 1 hour
+    // const price = await getStockPrice("AAPL")
+    // const stocks = await getStocksData(["AAPL", "QUBT", "ARKK", "BTC-USD", "SU"])
+    let appleStock = new Stock("AAPL");
+    let teslaStock = new Stock("TSLA");
+    Stock.update().then(() => {
+        console.log("Stock.update() complete!");
+        console.log(appleStock.getBasicData());
+        console.log(teslaStock.getBasicData());
+        writeStockJson(appleStock);
+        writeStockJson(teslaStock);
+    }, (error) => {
+        throw error;
+    });
+    
+    // setInterval(() => {
+    //     console.log(getStockPrice("AAPL"));
+    // }, 1000 * 60 * 60); // 1 hour
 }
 
-// const assets = [
-//     new Bitcoin(103.532)
-// ];
+const assets = [
+    new Bitcoin()
+];
 
-// var user = new User(1000, assets);
+var user = new User(1000, assets);
 testRun();
 // user.doCashTransaction(20);
 // document.write(user.toString())

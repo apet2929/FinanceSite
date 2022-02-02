@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "A website used to track my personal finances",
   "main": "script.js",
-  "type":"module",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -19,7 +19,9 @@
   },
   "homepage": "https://github.com/apet2929/FinanceSite#readme",
   "dependencies": {
+    "dotenv": "^15.0.0",
     "fetch": "^1.1.0",
+    "node-fetch": "^3.2.0",
     "ws": "^8.4.2"
   }
 }
