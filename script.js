@@ -195,19 +195,26 @@ class Transaction {
 }
 
 class User {
-    constructor(initial_cash, initial_assets) {
-        this.cash = initial_cash;
-        this.assets = initial_assets;
-        this.history = [new Transaction(this.cash, new Date(), "Initial cash value")];
+    static FromLocalStorage() {
+        let loaded = localStorage.getItem("portfolio")
+        let userData = JSON.parse(loaded)
+        let user = new User(userData.id);
+        user.load(userData.cash, userData.assets, userData.history);
     }
 
-    doCashTransaction(amount) {
-        const date = new Date()
-        doCashTransaction(amount, date)
-    } 
+    constructor(id) {
+        this.id = id;
+    }
 
-    doCashTransaction(amount, date) {
+    load(cash, assets, history) {
+        this.cash = cash;
+        this.assets = assets;
+        this.history = history;
+    }
+
+    doCashTransaction(amount, date=null) {
         this.cash += amount;
+        if(date == null) date = new Date();
         const transaction = new Transaction(amount, date);
         this.history.push(transaction)
         updatePageData(this);
@@ -245,19 +252,9 @@ class User {
 
 }
 
-class ConversionRate {
-    constructor(date, rate) {
-        this.date = date;
-        this.rate = rate;
-        Object.seal(this);
-    }
-}
-
 async function testRun() {
-    // const price = await getStockPrice("AAPL")
-    // const stocks = await getStocksData(["AAPL", "QUBT", "ARKK", "BTC-USD", "SU"])
-    var user = new User(1000, assets);
-
+    var user = new User("Andrew");
+    
     Stock.update().then(() => {
         console.log(appleStock.getBasicData());
         console.log(teslaStock.getBasicData());
@@ -277,4 +274,4 @@ const assets = [
 ];
 
 
-testRun();
+// testRun();
