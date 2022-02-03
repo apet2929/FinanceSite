@@ -58,10 +58,6 @@ function addParamsToUrl(url, params) {
     return rUrl.toString();
 }
 
-function isolateStockFromJson(stocksData, ticker) {
-
-}
-
 async function getStocksData(tickers) {
     if(tickers.length > 10) console.error("Maximum # of stocks exceeded!");
     let tickerStr = concatTickers(tickers);
@@ -100,21 +96,27 @@ async function getDetailedStockData(ticker) {
     return await getStockData(url, params);
 }
 
-async function getCryptoPrice(ticker) {
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${ticker.toLowerCase()}@kline_1m`);
+class HeldStock {
+    constructor(ticker, amount, purchase_date=null) {
+        this.stock = new Stock(ticker);
+        this.amount = amount;
+        if(purchase_date == null) purchase_date = new Date();
+        this.purchase_date = purchase_date;
+    }
 
-    ws.on('message', async (data) => {
-        const incomingData = JSON.parse(data.toString());
-        if (incomingData.k) {
-        const isClosed = incomingData.k.x;
-        const symbolPrice = Number(incomingData.k.c);
-        console.log(`${symbol.toUpperCase()} : ${symbolPrice} -- closed = ${isClosed}`);
-        return symbolPrice;
-        } 
-        console.error("Binance request failed!");
-        return null;
-    });
-    return null;
+    getTotalValue() {
+        return this.stock.getCurrentPrice() * this.amount;
+    }
+
+    sell(amount) {
+        this.amount -= amount;
+        return this.stock.getCurrentPrice() * amount; // the amount of cash you got from selling
+    }
+
+    buy(amount) {
+        this.amount += amount;
+        return this.stock.getCurrentPrice() * amount; // the amount of cash it took to buy
+    }
 }
 
 class Stock {
@@ -192,82 +194,49 @@ class Transaction {
     }
 }
 
-class Bitcoin {
-    // static {
-    //     this.price_history = [];
-
-    //     const today = new Date();
-    //     for (let index = 0; index < 365; index++) {
-    //         // this.price_history.push(getBtcPrice(new Date(today.year, today.month, today.date - index)))  
-    //         this.price_history.push(getCryptoPrice("btc"))  
-    //     }
-    // }
-    
-
-    constructor() {
-        Asset.apply(this);
-    }
-
-    update() {
-        return getCryptoPrice("btc");
-    }
-}
-
-/*
-Asset is an abstract class that will be used to provide a common interface to track the price of different assets
-
-Each Asset subclass has a static price history list, so that the price history only has to be loaded once per type of asset
-    - 
-Each Asset subclass will define a function to get the price at a specific date
-
-*/
-
-function Asset() {
-    if (this.constructor == Asset) {
-        throw new Error("Asset class cannot be directly instantiated");
-    }
-    this.rate_history = [new ConversionRate()];
-}
-
-Asset.prototype.getValueUSD = function(amount) {
-    return amount * this.rate;
-}
-
-Asset.prototype.sortRateHistory = function() {
-    this.rate_history.sort((a, b) => a - b);
-}
-
-Asset.prototype.getCurrentRate = function() {
-    return this.rate_history[this.rate_history.length-1];
-}
-
-Asset.prototype.setRate = function(date=null, rate) {
-    if(date == null) date = new Date();
-    const r  = new ConversionRate(date, rate);
-    this.rate_history.push(r);
-    this.sortRateHistory();
-}
-
-Asset.prototype.update = function() {
-    throw new Error("Update needs to be implemented");
-}
-
 class User {
     constructor(initial_cash, initial_assets) {
         this.cash = initial_cash;
         this.assets = initial_assets;
-        this.history = [new Transaction(this.cash, new Date(), "Initial value")];
+        this.history = [new Transaction(this.cash, new Date(), "Initial cash value")];
     }
 
     doCashTransaction(amount) {
         const date = new Date()
         doCashTransaction(amount, date)
     } 
+
     doCashTransaction(amount, date) {
         this.cash += amount;
         const transaction = new Transaction(amount, date);
         this.history.push(transaction)
         updatePageData(this);
+    }
+
+    doStockTransaction(ticker, numShares, date) {
+        let heldStock;
+        let cashAmnt;
+        try {
+            heldStock = this.getHeldStock(ticker);
+            cashAmnt = heldStock.buy(numShares);
+        } catch {
+            heldStock = new HeldStock(ticker, numShares, date);
+            cashAmnt = heldStock.buy(numShares);
+        }
+        this.cash -= cashAmnt;
+        this.history.push(new Transaction(cash_amnt, date, `Purchased ${ticker}x${numShares} for ${heldStock.stock.getCurrentPrice()} per share`))
+    }
+
+    getHeldStock(ticker) {
+        assets.forEach((heldStock) => {
+            if(heldStock.stock.ticker == ticker) return heldStock;
+        });
+        throw new Error("No held stock with ticker found!");
+    }
+
+    saveToLocalStorage() {
+        let json = JSON.stringify(this)
+        localStorage.setItem("portfolio", json)
     }
 
     toString() {
@@ -287,10 +256,9 @@ class ConversionRate {
 async function testRun() {
     // const price = await getStockPrice("AAPL")
     // const stocks = await getStocksData(["AAPL", "QUBT", "ARKK", "BTC-USD", "SU"])
-    let appleStock = new Stock("AAPL");
-    let teslaStock = new Stock("TSLA");
+    var user = new User(1000, assets);
+
     Stock.update().then(() => {
-        console.log("Stock.update() complete!");
         console.log(appleStock.getBasicData());
         console.log(teslaStock.getBasicData());
         writeStockJson(appleStock);
@@ -308,8 +276,5 @@ const assets = [
     new Bitcoin()
 ];
 
-var user = new User(1000, assets);
+
 testRun();
-// user.doCashTransaction(20);
-// document.write(user.toString())
-// console.log(user);
